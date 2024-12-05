@@ -58,5 +58,7 @@ RUN pip3 install matplotlib \
                 cython-bbox
 RUN pip3 install ultralytics
 
-RUN mkdir -p /home/workspace/
-WORKDIR /home/workspace/
+RUN pip3 install ipykernel
+
+RUN mkdir -p /workspace/
+WORKDIR /workspace/
