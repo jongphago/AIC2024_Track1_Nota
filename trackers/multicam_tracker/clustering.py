@@ -138,12 +138,19 @@ class Clustering:
             emb_dists = matching.embedding_distance(a_features, b_features) / 2
 
             if 0 not in emb_dists.shape:
-                norm_emb_dists = (emb_dists - np.min(emb_dists)) / (
-                    np.max(emb_dists) - np.min(emb_dists)
-                )
-                norm_euc_dists = (euc_dists - np.min(euc_dists)) / (
-                    np.max(euc_dists) - np.min(euc_dists)
-                )
+                # norm_emb_dists = (emb_dists - np.min(emb_dists)) / (
+                #     np.max(emb_dists) - np.min(emb_dists)
+                # )
+                # norm_euc_dists = (euc_dists - np.min(euc_dists)) / (
+                #     np.max(euc_dists) - np.min(euc_dists)
+                # )
+                
+                range_emb = np.ptp(emb_dists)
+                range_euc = np.ptp(euc_dists)
+
+                norm_emb_dists = (emb_dists - np.min(emb_dists)) / range_emb if range_emb != 0 else np.zeros_like(emb_dists)
+                norm_euc_dists = (euc_dists - np.min(euc_dists)) / range_euc if range_euc != 0 else np.zeros_like(euc_dists)
+
 
                 dists = np.zeros_like(euc_dists)
                 for i in range(len(dists)):

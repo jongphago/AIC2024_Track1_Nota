@@ -186,7 +186,7 @@ class MCTracker:
         self.max_len = 1
 
         self.clustering = AgglomerativeClustering(
-            n_clusters=2, affinity="cosine", linkage="average"
+            n_clusters=2, metric="cosine", linkage="average"
         )
         # self.clustering = AgglomerativeClustering(n_clusters=2, metric='cosine', linkage='ward')
 
@@ -401,12 +401,17 @@ class MCTracker:
                 / self.max_len
             )
 
-            norm_emb_dists = (emb_dists - np.min(emb_dists)) / (
-                np.max(emb_dists) - np.min(emb_dists)
-            )
-            norm_euc_dists = (euc_dists - np.min(euc_dists)) / (
-                np.max(euc_dists) - np.min(euc_dists)
-            )
+            # norm_emb_dists = (emb_dists - np.min(emb_dists)) / (
+            #     np.max(emb_dists) - np.min(emb_dists)
+            # )
+            # norm_euc_dists = (euc_dists - np.min(euc_dists)) / (
+            #     np.max(euc_dists) - np.min(euc_dists)
+            # )
+            range_emb = np.ptp(emb_dists)  # emb_dists의 최대-최소 범위
+            range_euc = np.ptp(euc_dists)  # euc_dists의 최대-최소 범위
+            norm_emb_dists = (emb_dists - np.min(emb_dists)) / range_emb if range_emb != 0 else np.zeros_like(emb_dists)
+            norm_euc_dists = (euc_dists - np.min(euc_dists)) / range_euc if range_euc != 0 else np.zeros_like(euc_dists)
+            
             dists = 0.5 * norm_euc_dists + 0.5 * norm_emb_dists
 
             if shape == (1, 1):
