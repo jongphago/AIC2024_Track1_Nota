@@ -47,7 +47,7 @@ def run(
         detection = YOLO("yolov8x.pt")
 
     # pose estimation initialize
-    config_file = "/mmpose/configs/body_2d_keypoint/rtmpose/crowdpose/rtmpose-m_8xb64-210e_crowdpose-256x192.py"
+    config_file = "mmpose/configs/body_2d_keypoint/rtmpose/crowdpose/rtmpose-m_8xb64-210e_crowdpose-256x192.py"
     checkpoint_file = "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose-m_simcc-crowdpose_pt-aic-coco_210e-256x192-e6192cac_20230224.pth"
     pose = init_model(config_file, checkpoint_file, device="cuda:0")
 

@@ -3,7 +3,7 @@ from pathlib import Path
 
 calibration_position = {
     # AIHub
-    "scene_042": sorted([str(p) for p in Path("/workspace/videos/val/scene_042").glob("**/calibration.json")]),
+    "scene_042": sorted([str(p) for p in Path("videos/val/scene_042").glob("**/calibration.json")]),
     
     # Val
     # "scene_041": sorted([str(p) for p in Path("/workspace/videos/val/scene_041").glob("**/calibration.json")]),

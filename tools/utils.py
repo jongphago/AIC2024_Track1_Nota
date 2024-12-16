@@ -259,8 +259,8 @@ sources = {
     # AIHub
     "scene_042": sorted(
         [
-            os.path.join("/workspace/frames/val/scene_042", p)
-            for p in os.listdir("/workspace/frames/val/scene_042")
+            os.path.join("frames/val/scene_042", p)
+            for p in os.listdir("frames/val/scene_042")
         ]
     ),
     # Val
@@ -379,7 +379,7 @@ cam_ids = {
     "scene_042": sorted(
         [
             int(cam.split("_")[-1])
-            for cam in os.listdir("/workspace/videos/val/scene_042")
+            for cam in os.listdir("videos/val/scene_042")
             if cam.startswith("camera_")
         ]
     ),

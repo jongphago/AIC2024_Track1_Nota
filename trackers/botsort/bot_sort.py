@@ -14,6 +14,7 @@ import pdb
 import sys
 import math
 
+np.float = np.float64
 
 class ID_Assigner:
     def __init__(self, init_id=0):
