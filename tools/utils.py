@@ -1,4 +1,6 @@
+import random
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import cv2
 import os
@@ -519,6 +521,7 @@ def write_vids(
     map_writer=None,
     map_image=None,
     write_map=False,
+    track_records=None,
 ):
     writers = [w for s, w in src_handlers]
     result_imgs = [] if write_result else None
@@ -536,6 +539,19 @@ def write_vids(
             + [t.score, t.global_id, gid_2_lenfeats.get(t.global_id, -1)]
             for t in tracker.tracked_stracks
         ]
+        for t in tracker.tracked_stracks:
+            track_record = {
+                "track_id": t.global_id,
+                "X": int(t.location[0][0]),
+                "Y": int(t.location[0][1]),
+                "distance": int(np.linalg.norm(np.array([0, 0]) - t.location[0])),
+            }
+            if t.global_id not in track_records:
+                track_records[t.global_id] = track_record
+                track_records[t.global_id]["duration"] = 1
+            else:
+                track_records[t.global_id].update(track_record)
+                track_records[t.global_id]["duration"] += 1
         pose_result = [t.pose for t in tracker.tracked_stracks if t.pose is not None]
         img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
         w.write(img)
@@ -546,16 +562,129 @@ def write_vids(
                 color = (colors[t.global_id % 80] * 255).astype(np.uint8).tolist()
                 location = tuple(map(int, t.location[0]))
                 cv2.circle(map_image, location, 5, color, -1)
+
     if write_map:
         map_image = map_image[-1080:, :]
-        empty_frame = np.zeros_like(map_image)
-        stacked_map = np.vstack([map_image, empty_frame])
-        map_writer.write(stacked_map)
+
+    # write table
+    if True:
+        def generate_track_records(track_records):
+            track_records = pd.DataFrame(track_records).T
+            # 필터링: track_id가 음수가 아닌 데이터만 선택
+            filtered_data = track_records[track_records['track_id'] > 0]
+            # 정렬: duration을 기준으로 오름차순
+            sorted_data = filtered_data.sort_values(by='duration', ascending=True)
+            # 상위 7개의 데이터 선택
+            top_data = sorted_data.head(7)
+            # 5개 컬럼 선택
+            result = top_data[["track_id", "X", "Y", "distance", "duration"]]
+            return result
+
+        def generate_random_table(rows, cols):
+            data = {
+                f"Col {j+1}": [random.randint(1, 100) for _ in range(rows)]
+                for j in range(cols)
+            }
+            return pd.DataFrame(data)
+
+        # OpenCV 화면에 표를 그리는 함수
+        def draw_table(
+            image, table, start_x, start_y, cell_width, cell_height, font_scale=0.6
+        ):
+            """
+            Draws a Pandas DataFrame table on an OpenCV image.
+
+            Args:
+                image (numpy.ndarray): OpenCV image to draw on.
+                table (pandas.DataFrame): Table to draw.
+                start_x (int): X-coordinate to start drawing.
+                start_y (int): Y-coordinate to start drawing.
+                cell_width (int): Width of each cell.
+                cell_height (int): Height of each cell.
+                font_scale (float): Font size for text.
+            """
+            # Table dimensions
+            rows, cols = table.shape
+            end_x = start_x + cols * cell_width
+            end_y = start_y + (rows + 1) * cell_height
+
+            # Draw horizontal lines
+            for i in range(rows + 2):
+                y = start_y + i * cell_height
+                cv2.line(image, (start_x, y), (end_x, y), (255, 255, 255), 10)
+
+            # Draw vertical lines
+            for j in range(cols + 1):
+                x = start_x + j * cell_width
+                cv2.line(image, (x, start_y), (x, end_y), (255, 255, 255), 5)
+
+            # Add text in cells
+            columns_names = ["Track ID", "X", "Y", "Distance", "Duration"]
+            for j, column_name in enumerate(columns_names):
+                text_size = cv2.getTextSize(
+                    column_name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
+                )[0]
+                text_x = start_x + j * cell_width + (cell_width - text_size[0]) // 2
+                text_y = start_y + (cell_height + text_size[1]) // 2
+                cv2.putText(
+                    image,
+                    column_name,
+                    (text_x, text_y),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    font_scale,
+                    (255, 255, 255),
+                    10,
+                )
+
+            for i in range(rows):
+                for j in range(cols):
+                    text = str(table.iloc[i, j])
+                    text_size = cv2.getTextSize(
+                        text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
+                    )[0]
+                    text_x = start_x + j * cell_width + (cell_width - text_size[0]) // 2
+                    text_y = (
+                        start_y
+                        + (i + 1) * cell_height
+                        + (cell_height + text_size[1]) // 2
+                    )
+                    cv2.putText(
+                        image,
+                        text,
+                        (text_x, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        font_scale,
+                        (255, 255, 255),
+                        10,
+                    )
+
+        # 표 데이터를 랜덤으로 생성하는 함수
+        table_frame = np.zeros_like(map_image, dtype=np.uint8)
+
+        # Generate a random table
+        rows, cols = 7, 5
+        random_table = generate_random_table(rows, cols)
+        record_table = generate_track_records(track_records)
+
+        # Draw the table in the bottom-left corner
+        draw_table(
+            table_frame,
+            record_table,
+            start_x=210,
+            start_y=80,
+            cell_width=300,
+            cell_height=120,
+            font_scale=1.8,
+        )
+
+    stacked_map = np.vstack([map_image, table_frame])
 
     if write_result:
         stacked_img = np.vstack(result_imgs)
         result_stack = np.hstack([stacked_img, stacked_map])
         result_writer.write(result_stack)
+
+    return result_stack
 
 
 def write_results_testset(result_lists, result_path):

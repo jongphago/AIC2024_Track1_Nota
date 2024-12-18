@@ -93,6 +93,7 @@ def run(
     map_writer = get_map_writer(sources[0]) if args["write_map"] else None
     map_image = cv2.imread("maps/val/scene_042/map.png") if args["write_map"] else None
 
+    track_records = {}
     while True:
         imgs = []
         start = time.time()
@@ -145,7 +146,7 @@ def run(
         update_result_lists_testset(trackers, results_lists, cur_frame, cam_ids, scene)
 
         if args["write_vid"]:
-            write_vids(
+            result_stack = write_vids(
                 trackers,
                 imgs,
                 src_handlers,
@@ -158,7 +159,11 @@ def run(
                 map_writer=map_writer,
                 map_image=map_image.copy(),
                 write_map=args["write_map"],
+                track_records=track_records,
             )
+            cv2.imshow("result", cv2.resize(result_stack, (1152, 648)))
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
         print(f"video frame ({cur_frame}/{total_frames})")
         cur_frame += 1
