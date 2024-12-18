@@ -9,3 +9,4 @@ od_total/
 reid_dataset/
 __pycache__/
 .vscode
+async/screenshot
