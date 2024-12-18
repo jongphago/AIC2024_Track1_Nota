@@ -1,3 +1,4 @@
+import asyncio
 from ultralytics import YOLO
 from mmpose.apis import init_model
 
@@ -29,7 +30,54 @@ import numpy as np
 import argparse
 
 
-def make_parser():
+async def initialize_captures(camera_indices):
+    captures = []
+    for camera_index in camera_indices:
+        captures.append(cv2.VideoCapture(camera_index))
+        if not captures[-1].isOpened():
+            print(f"Camera {camera_index} is not opened")
+            return None
+    return captures
+
+
+async def release_captures(captures):
+    for cap in captures:
+        if cap:
+            cap.release()
+            print("Capture released")
+    cv2.destroyAllWindows()
+
+
+async def draw_latency(frame, begin):
+    cv2.putText(
+        frame,
+        f"latency: {int((time.time() - begin) * 1000)} ms",
+        (10, 60),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        2,
+        (0, 255, 0),
+        2,
+    )
+    return frame
+
+
+async def play(camera_index, cap, queue, fps=30):
+    while True:
+        if not cap:
+            break
+        ret, frame = cap.read()
+        if not ret:
+            print("VideoCapture read error")
+            break
+        if not queue.full():
+            await queue.put((camera_index, frame, time.time()))
+            print(f"put frame {camera_index}. Queue sizie: {queue.qsize()}")
+        else:
+            print(f"Queue is full. Queue size: {queue.qsize()}")
+        await asyncio.sleep(1 / fps)
+
+
+async def make_parser():
     parser = argparse.ArgumentParser(description="Run Online MTPC System")
     parser.add_argument(
         "-s", "--scene", type=str, default=None, help="scene name to inference"
@@ -37,8 +85,16 @@ def make_parser():
     return parser.parse_args()
 
 
-def run(
-    args, conf_thres, iou_thres, sources, result_paths, perspective, cam_ids, scene
+async def run(
+    args,
+    conf_thres,
+    iou_thres,
+    sources,
+    result_paths,
+    perspective,
+    cam_ids,
+    scene,
+    queues,
 ):
     # detection model initilaize
     if int(scene.split("_")[1]) in range(61, 81):
@@ -96,17 +152,23 @@ def run(
     while True:
         imgs = []
         start = time.time()
+        timestamps = []
 
         # first, run trackers each frame independently
-        for (img_paths, writer), tracker, perspective_transform, result_list in zip(
-            src_handlers, trackers, perspective_transforms, results_lists
-        ):
+        for (
+            queue,
+            (img_paths, writer),
+            tracker,
+            perspective_transform,
+            result_list,
+        ) in zip(queues, src_handlers, trackers, perspective_transforms, results_lists):
             # if len(img_paths) == 0 or cur_frame==30:
-            if len(img_paths) == 0:
-                stop = True
-                break
-            img_path = img_paths.pop(0)
-            img = cv2.imread(img_path)
+            # if len(img_paths) == 0:
+            #     stop = True
+            #     break
+            # img_path = img_paths.pop(0)
+            camera_index, img, ts = await queue.get()
+            timestamps.append(ts)
 
             # run detection model
             dets = (
@@ -119,7 +181,7 @@ def run(
 
             # run tracker
             online_targets, new_ratio = tracker.update(
-                dets, img, img_path, pose
+                dets, img, None, pose
             )  # run tracker
 
             # run perspective transform
@@ -145,7 +207,7 @@ def run(
         update_result_lists_testset(trackers, results_lists, cur_frame, cam_ids, scene)
 
         if args["write_vid"]:
-            write_vids(
+            result_image = write_vids(
                 trackers,
                 imgs,
                 src_handlers,
@@ -159,6 +221,10 @@ def run(
                 map_image=map_image.copy(),
                 write_map=args["write_map"],
             )
+            result_image = await draw_latency(result_image, min(timestamps))
+            cv2.imshow("result", cv2.resize(result_image, (1152, 648)))
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
 
         print(f"video frame ({cur_frame}/{total_frames})")
         cur_frame += 1
@@ -170,7 +236,7 @@ def run(
     print("Done")
 
 
-if __name__ == "__main__":
+async def main():
     args = {
         "max_batch_size": 32,  # maximum input batch size of reid model
         "track_buffer": 150,  # the frames for keep lost tracks
@@ -186,9 +252,21 @@ if __name__ == "__main__":
         "write_map": True,  # write result to map video
     }
 
-    scene = make_parser().scene
-    begin = time.time()     # start time
-    if scene is not None:
+    camera_indices = [2, 4]
+    # camera_indices = [
+    #     "rtsp://210.99.70.120:1935/live/cctv007.stream",
+    #     "rtsp://210.99.70.120:1935/live/cctv002.stream",
+    # ]
+    captures = await initialize_captures(camera_indices)
+    queues = [asyncio.Queue(maxsize=10) for _ in camera_indices]
+
+    producer_tasks = [
+        asyncio.create_task(play(camera_index, cap, queue))
+        for camera_index, (cap, queue) in enumerate(zip(captures, queues))
+    ]
+
+    scene = "scene_042"
+    counsumer_task = asyncio.create_task(
         run(
             args=args,
             conf_thres=0.1,
@@ -198,28 +276,16 @@ if __name__ == "__main__":
             perspective=scene,
             cam_ids=cam_ids[scene],
             scene=scene,
+            queues=queues,
         )
+    )
 
-    else:
-        # run each scene sequentially
-        scenes = [
-            # AIHub
-            "scene_042"
-            # AIC
-            # 'scene_061', 'scene_062', 'scene_063', 'scene_064', 'scene_065', 'scene_066', 'scene_067', 'scene_068', 'scene_069', 'scene_070',
-            # 'scene_071', 'scene_072', 'scene_073', 'scene_074', 'scene_075', 'scene_076', 'scene_077', 'scene_078', 'scene_079', 'scene_080',
-            # 'scene_081', 'scene_082', 'scene_083', 'scene_084', 'scene_085', 'scene_086', 'scene_087', 'scene_088', 'scene_089', 'scene_090',
-        ]
-        for scene in scenes:
-            run(
-                args=args,
-                conf_thres=0.1,
-                iou_thres=0.45,
-                sources=sources[scene],
-                result_paths=result_paths[scene],
-                perspective=scene,
-                cam_ids=cam_ids[scene],
-                scene=scene,
-            )
+    try:
+        await asyncio.gather(*producer_tasks)
+        await counsumer_task
+    finally:
+        await release_captures(captures)
 
-    print(f"Total time: {time.time() - begin}")
+
+if __name__ == "__main__":
+    asyncio.run(main())

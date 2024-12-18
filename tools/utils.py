@@ -538,7 +538,8 @@ def write_vids(
         ]
         pose_result = [t.pose for t in tracker.tracked_stracks if t.pose is not None]
         img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
-        w.write(img)
+        img = cv2.resize(img, (640, 960))
+        # w.write(img)
         if write_result:
             result_imgs.append(img)
         if write_map:
@@ -550,12 +551,17 @@ def write_vids(
         map_image = map_image[-1080:, :]
         empty_frame = np.zeros_like(map_image)
         stacked_map = np.vstack([map_image, empty_frame])
-        map_writer.write(stacked_map)
+        if True:
+            stacked_map = cv2.resize(stacked_map, (1280, 960))
+        # map_writer.write(stacked_map)
 
     if write_result:
         stacked_img = np.vstack(result_imgs)
+        stacked_img = cv2.resize(stacked_img, (1280, 960))
+        
         result_stack = np.hstack([stacked_img, stacked_map])
-        result_writer.write(result_stack)
+        # result_writer.write(result_stack)
+        return result_stack
 
 
 def write_results_testset(result_lists, result_path):
