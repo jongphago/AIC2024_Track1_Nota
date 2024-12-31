@@ -10,3 +10,7 @@ reid_dataset/
 __pycache__/
 .vscode
 async/screenshot
+output_images
+**/.gitkeep
+reid/fastreid/evaluation/rank_cylib
+result.png
