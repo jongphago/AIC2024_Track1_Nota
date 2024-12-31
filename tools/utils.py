@@ -4,7 +4,7 @@ import cv2
 import os
 import pickle
 import json
-
+from tools.draw_table import draw_table, generate_track_records, create_track_records
 
 _COLORS = (
     np.array(
@@ -549,8 +549,19 @@ def write_vids(
                 cv2.circle(map_image, location, 5, color, -1)
     if write_map:
         map_image = map_image[-1080:, :]
-        empty_frame = np.zeros_like(map_image)
-        stacked_map = np.vstack([map_image, empty_frame])
+        track_records = create_track_records(trackers)
+        table_frame = np.zeros_like(map_image)
+        record_table = generate_track_records(track_records)
+        draw_table(
+            table_frame,
+            record_table,
+            start_x=210,
+            start_y=80,
+            cell_width=300,
+            cell_height=120,
+            font_scale=1.8,
+        )
+        stacked_map = np.vstack([map_image, table_frame])
         if True:
             stacked_map = cv2.resize(stacked_map, (1280, 960))
         # map_writer.write(stacked_map)
@@ -558,7 +569,7 @@ def write_vids(
     if write_result:
         stacked_img = np.vstack(result_imgs)
         stacked_img = cv2.resize(stacked_img, (1280, 960))
-        
+
         result_stack = np.hstack([stacked_img, stacked_map])
         # result_writer.write(result_stack)
         return result_stack
