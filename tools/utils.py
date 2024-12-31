@@ -6,7 +6,7 @@ import cv2
 import os
 import pickle
 import json
-
+from tools.draw_table import create_track_records
 
 _COLORS = (
     np.array(
@@ -541,19 +541,6 @@ def write_vids(
             + [t.score, t.global_id, gid_2_lenfeats.get(t.global_id, -1)]
             for t in tracker.tracked_stracks
         ]
-        for t in tracker.tracked_stracks:
-            track_record = {
-                "track_id": t.global_id,
-                "X": int(t.location[0][0]),
-                "Y": int(t.location[0][1]),
-                "distance": int(np.linalg.norm(np.array([0, 0]) - t.location[0])),
-            }
-            if t.global_id not in track_records:
-                track_records[t.global_id] = track_record
-                track_records[t.global_id]["duration"] = 1
-            else:
-                track_records[t.global_id].update(track_record)
-                track_records[t.global_id]["duration"] += 1
         pose_result = [t.pose for t in tracker.tracked_stracks if t.pose is not None]
         if True:
             img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
@@ -578,11 +565,13 @@ def write_vids(
                     2,
                 )
                 cv2.circle(sc_map_image, location, 10, color, -1)
+                
+    track_records = create_track_records(trackers)
 
     if write_map:
         is_mc = True
         tracks = mc_tracker.tracked_mtracks
-        
+
         for t in tracks:
             location = t.curr_coords[0].astype(int).tolist()
             track_id = t.global_id
