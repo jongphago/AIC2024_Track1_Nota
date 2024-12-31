@@ -83,8 +83,8 @@ class HomographyFinder:
     def find_homography(self):
         cam_points = np.array(self.cam_points)
         map_points = np.array(self.map_points)
-        H, _ = cv2.findHomography(cam_points, map_points)
-        return H
+        H_inv, _ = cv2.findHomography(map_points, cam_points)
+        return H_inv
 
     def warp_cam_image(self):
         cam_image = self.draw_points(self.cam_image, self.cam_points)
@@ -129,7 +129,8 @@ class HomographyFinder:
         self.cam_points = self.get_points(self.cam_image)
         self.map_points = self.get_points(self.map_image)
         # Find the homography
-        self.H = self.find_homography()
+        self.H_inv = self.find_homography()
+        self.H = np.linalg.inv(self.H_inv)
         # Warp the image
         self.warped_image = self.warp_cam_image()
         # Visualize the points
@@ -154,15 +155,16 @@ class HomographyFinder:
         return selector.get_points()
 
     def write_homography(self):
-        with open(Path(self.cam_path).parent / f"homography.json", "w") as f:
+        with open(Path(self.cam_path).parent / f"calibration.json", "w") as f:
             json.dump(
                 {
-                    # "camera projection matrix": self.osmo_action_5pro_camera_projection_matrix,
-                    "homography matrix": self.H.tolist(),
-                    # "dist": self.osmo_action_5pro_dist,
+                    "camera projection matrix": self.osmo_action_5pro_camera_projection_matrix,
+                    "homography matrix": self.H_inv.tolist(),
+                    "dist": self.osmo_action_5pro_dist,
                 },
                 f,
             )
+            print(f"Saved the homography matrix to {Path(self.cam_path).parent}")
 
 
 def load_cam_image(camera_index, camera_path):
@@ -183,8 +185,8 @@ def load_cam_image(camera_index, camera_path):
 if __name__ == "__main__":
     # Define the paths
     scene = "scene_042"
-    camera_id = 2
-    camera_path = f"videos/val/{scene}/camera{camera_id:02d}/cam.png"
+    camera_id = 10
+    camera_path = f"videos/val/{scene}/camera{camera_id:02d}/cam.jpg"
     map_path = f"maps/val/{scene}/map.png"
 
     load_cam_image(camera_id, camera_path)

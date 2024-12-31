@@ -2,6 +2,7 @@ from . import matching
 from itertools import combinations
 import numpy as np
 import pdb
+import logging
 
 
 class ID_Distributor:
@@ -21,7 +22,7 @@ class Clustering:
         self.match_thresh = match_thresh
         if map_size:
             self.euc_thresh = euc_thresh
-        self.max_len = 1
+        self.max_len = (1920**2 + 1080**2)**0.5
 
     def update(self, trackers, cur_frame, scene):
         matched_ids = []
@@ -58,12 +59,12 @@ class Clustering:
             print("Not Test Set Scene")
             hw_thresh, has_points_thresh, has_heads_thresh, num_kpts_thresh = (
                 1.5,
-                8,
+                5,
                 2,
-                18,
+                21,
             )
             emb_thresh = 0.30
-            euc_thresh = 1.5
+            euc_thresh = 0.1
             # raise
 
         for tracker in trackers:
@@ -85,17 +86,36 @@ class Clustering:
                 if track.pose is not None:
                     has_heads, has_points, has_parts = self.pose_check_all(track.pose)
                 else:
-                    has_heads, has_points, has_parts = None, None, None
+                    has_heads, has_points, has_parts = [0], [0], [0]
                 t, l, w, h = track.tlwh.tolist()
-                if (
-                    h / w < hw_thresh
-                    or has_points is None
+                track_filter = (
+                    h / w < hw_thresh  # 서있는 자세가 아닌 경우
+                    or has_points is None  # 어깨 아래 포인트가 없는 경우
                     or sum(has_points) <= has_points_thresh
                     or sum(has_heads) <= has_heads_thresh
                     or track.num_kpts >= num_kpts_thresh
+                )
+                filter_log = (
+                    f"tracker_b - {str(track):14s} {track_filter!s:<5} | "
+                    f"{h / w < hw_thresh!s:<5} {h / w:.2f}<{hw_thresh} | "
+                )
+                if has_points is not None:
+                    filter_log += (
+                        f"{sum(has_points)<=has_points_thresh!s:<5} {sum(has_points):2d}<={has_points_thresh} | "
+                        f"{sum(has_heads)<=has_heads_thresh!s:<5} {sum(has_heads):2d}<={has_heads_thresh} | "
+                        f"{track.num_kpts>=num_kpts_thresh!s:<5} {track.num_kpts:2d}>={num_kpts_thresh}"
+                    )
+                logging.info(filter_log)
+                if (
+                    h / w < hw_thresh  # 서있는 자세가 아닌 경우
+                    or has_points is None  # 어깨 아래 포인트가 없는 경우
+                    or sum(has_points) <= has_points_thresh
+                    or sum(has_heads) <= has_heads_thresh
+                    or track.num_kpts
+                    >= num_kpts_thresh  # 다른 사람의 키포인트와 겹치는 경우
                 ):
                     track.global_id = -1
-                    continue
+                    # continue
 
                 a_features.append(track.curr_feat)
                 a_locations.append(track.location[0])
@@ -113,6 +133,24 @@ class Clustering:
                 else:
                     has_heads, has_points, has_parts = None, None, None
                 t, l, w, h = track.tlwh.tolist()
+                track_filter = (
+                    h / w < hw_thresh  # 서있는 자세가 아닌 경우
+                    or has_points is None  # 어깨 아래 포인트가 없는 경우
+                    or sum(has_points) <= has_points_thresh
+                    or sum(has_heads) <= has_heads_thresh
+                    or track.num_kpts >= num_kpts_thresh
+                )
+                filter_log = (
+                    f"tracker_b - {str(track):14s} {track_filter!s:<5} | "
+                    f"{h / w < hw_thresh!s:<5} {h / w:.2f}<{hw_thresh} | "
+                )
+                if has_points is not None:
+                    filter_log += (
+                        f"{sum(has_points)<=has_points_thresh!s:<5} {sum(has_points):2d}<={has_points_thresh} | "
+                        f"{sum(has_heads)<=has_heads_thresh!s:<5} {sum(has_heads):2d}<={has_heads_thresh} | "
+                        f"{track.num_kpts>=num_kpts_thresh!s:<5} {track.num_kpts:2d}>={num_kpts_thresh}"
+                    )
+                logging.info(filter_log)
                 if (
                     h / w < hw_thresh
                     or has_points is None
@@ -121,7 +159,7 @@ class Clustering:
                     or track.num_kpts >= num_kpts_thresh
                 ):
                     track.global_id = -1
-                    continue
+                    # continue
 
                 b_features.append(track.curr_feat)
                 b_locations.append(track.location[0])
@@ -135,7 +173,9 @@ class Clustering:
             euc_dists = (
                 matching.euclidean_distance(a_locations, b_locations) / self.max_len
             )
+            logging.info(f"\neuc_dists\n{np.maximum(euc_thresh - euc_dists, 0)}")
             emb_dists = matching.embedding_distance(a_features, b_features) / 2
+            logging.info(f"\nemb_dists\n{np.maximum(emb_thresh - emb_dists, 0)}")
 
             if 0 not in emb_dists.shape:
                 # norm_emb_dists = (emb_dists - np.min(emb_dists)) / (
@@ -144,13 +184,20 @@ class Clustering:
                 # norm_euc_dists = (euc_dists - np.min(euc_dists)) / (
                 #     np.max(euc_dists) - np.min(euc_dists)
                 # )
-                
+
                 range_emb = np.ptp(emb_dists)
                 range_euc = np.ptp(euc_dists)
 
-                norm_emb_dists = (emb_dists - np.min(emb_dists)) / range_emb if range_emb != 0 else np.zeros_like(emb_dists)
-                norm_euc_dists = (euc_dists - np.min(euc_dists)) / range_euc if range_euc != 0 else np.zeros_like(euc_dists)
-
+                norm_emb_dists = (
+                    (emb_dists - np.min(emb_dists)) / range_emb
+                    if range_emb != 0
+                    else np.zeros_like(emb_dists)
+                )
+                norm_euc_dists = (
+                    (euc_dists - np.min(euc_dists)) / range_euc
+                    if range_euc != 0
+                    else np.zeros_like(euc_dists)
+                )
 
                 dists = np.zeros_like(euc_dists)
                 for i in range(len(dists)):
@@ -164,8 +211,8 @@ class Clustering:
             else:
                 dists = 0.5 * euc_dists + 0.5 * emb_dists
 
-            dists[emb_dists > emb_thresh] = 1.0
-            dists[euc_dists > euc_thresh] = 1.0
+            dists[emb_dists > emb_thresh] = 1.0  # 0.3
+            dists[euc_dists > euc_thresh] = 1.0  # 1.5
 
             matches, u_afeats, u_bfeats = matching.linear_assignment(
                 dists, thresh=0.999
@@ -229,18 +276,18 @@ class Clustering:
 
         total_objects = [
             [
-                track.t_global_id,
-                track.curr_feat,
-                track.location[0],
-                track.pose,
-                track.img_path,
-                track.tlbr,
+                track.t_global_id,  # 0
+                track.curr_feat,  # 1
+                track.location[0],  # 2
+                track.pose,  # 3
+                tracker_index,  # 4
+                track.tlbr,  # 5
             ]
-            for tracker in trackers
+            for tracker_index, tracker in enumerate(trackers)
             for track in tracker.tracked_stracks
             if track.global_id != -1
         ]
-        # total_objects = [[track.t_global_id, track.curr_feat, track.location[0], track.pose] 
+        # total_objects = [[track.t_global_id, track.curr_feat, track.location[0], track.pose]
         # for tracker in trackers for track in tracker.tracked_stracks if track.global_id != -1]
         total_ids = sorted(set([obj[0] for obj in total_objects]))
         groups = []
@@ -251,7 +298,7 @@ class Clustering:
             coords = []
             poses = []
 
-            paths = []
+            tracker_indices = []
             tlbrs = []
             for obj in total_objects:
                 if obj[0] == global_id:
@@ -261,10 +308,20 @@ class Clustering:
                     coords.append(obj[2])
                     poses.append(obj[3])
 
-                    paths.append(obj[4])
+                    tracker_indices.append(obj[4])
                     tlbrs.append(obj[5])
             centroid /= num
-            groups.append([global_id, features, centroid, poses, paths, tlbrs, coords])
+            groups.append(
+                [
+                    global_id,  # 0
+                    features,  # 1
+                    centroid,  # 2
+                    poses,  # 3
+                    tracker_indices,  # 4
+                    tlbrs,  # 5
+                    coords,  # 6
+                ]
+            )
             # groups.append([global_id, features, centroid, poses])
 
         return np.array(groups, dtype=object)

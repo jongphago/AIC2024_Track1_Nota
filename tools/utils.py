@@ -526,6 +526,8 @@ def write_vids(
     writers = [w for s, w in src_handlers]
     result_imgs = [] if write_result else None
     gid_2_lenfeats = {}
+    sc_map_image = map_image.copy()
+    mc_map_image = map_image.copy()
 
     for track in mc_tracker.tracked_mtracks + mc_tracker.lost_mtracks:
         if track.is_activated:
@@ -533,7 +535,7 @@ def write_vids(
         else:
             gid_2_lenfeats[-2] = len(track.features)
 
-    for tracker, img, w in zip(trackers, imgs, writers):
+    for tracker_index, (tracker, img, w) in enumerate(zip(trackers, imgs, writers)):
         outputs = [
             t.tlbr.tolist()
             + [t.score, t.global_id, gid_2_lenfeats.get(t.global_id, -1)]
@@ -553,15 +555,87 @@ def write_vids(
                 track_records[t.global_id].update(track_record)
                 track_records[t.global_id]["duration"] += 1
         pose_result = [t.pose for t in tracker.tracked_stracks if t.pose is not None]
-        img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
-        w.write(img)
-        if write_result:
-            result_imgs.append(img)
+        if True:
+            img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
+            w.write(img)
+            if write_result:
+                result_imgs.append(img)
+
         if write_map:
-            for t in tracker.tracked_stracks:
-                color = (colors[t.global_id % 80] * 255).astype(np.uint8).tolist()
+            is_mc = True
+            tracks = tracker.tracked_stracks
+            for t in tracks:
                 location = tuple(map(int, t.location[0]))
-                cv2.circle(map_image, location, 5, color, -1)
+                track_id = t.global_id
+                color = (colors[track_id % 80] * 255).astype(np.uint8).tolist()
+                cv2.putText(
+                    sc_map_image,
+                    f"{str(track_id)}[{tracker_index}]",
+                    location,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    color,
+                    2,
+                )
+                cv2.circle(sc_map_image, location, 10, color, -1)
+
+    if write_map:
+        is_mc = True
+        tracks = mc_tracker.tracked_mtracks
+        
+        for t in tracks:
+            location = t.curr_coords[0].astype(int).tolist()
+            track_id = t.global_id
+            color = (colors[track_id % 80] * 255).astype(np.uint8).tolist()
+            cv2.putText(
+                mc_map_image,
+                str(track_id),
+                location,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                color,
+                2,
+            )
+            cv2.circle(mc_map_image, location, 10, color, -1)
+
+    # draw camera track using mc_tracker
+    if False:
+        copied_imgs = [img.copy() for img in imgs]
+        m = 2
+        for mtrack in mc_tracker.tracked_mtracks:
+            img_paths = mtrack.img_paths
+            path_tlbr = mtrack.path_tlbr
+            track_id = mtrack.global_id
+            text = f"{track_id}"
+            txt_color = (
+                (0, 0, 0) if np.mean(colors[track_id % 80]) > 0.5 else (255, 255, 255)
+            )
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            txt_size = cv2.getTextSize(text, font, 0.4 * m, 1 * m)[0]
+            txt_bk_color = (colors[track_id % 80] * 255 * 0.7).astype(np.uint8).tolist()
+            color = (colors[track_id % 80] * 255).astype(np.uint8).tolist()
+            for img_path in img_paths:
+                tlbr = path_tlbr[img_path].astype(int)
+                x0, y0 = tlbr[:2]
+                img = copied_imgs[img_path]
+                cv2.rectangle(img, tlbr[:2], tlbr[2:], color, 3)
+                cv2.rectangle(
+                    img,
+                    (x0, y0 - 2),
+                    (x0 + txt_size[0] + 1, y0 - int(1.5 * txt_size[1])),
+                    txt_bk_color,
+                    -1,
+                )
+                cv2.putText(
+                    img,
+                    text,
+                    (x0, int(y0 - txt_size[1] / 2)),
+                    font,
+                    0.4 * m,
+                    txt_color,
+                    thickness=1 * m,
+                )
+        result_imgs = copied_imgs
 
     if write_map:
         map_image = map_image[-1080:, :]
@@ -677,7 +751,9 @@ def write_vids(
             font_scale=1.8,
         )
 
-    stacked_map = np.vstack([map_image, table_frame])
+    is_table = False
+    window = table_frame if is_table else sc_map_image
+    stacked_map = np.vstack([mc_map_image, window])
 
     if write_result:
         stacked_img = np.vstack(result_imgs)

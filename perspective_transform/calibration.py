@@ -3,8 +3,14 @@ from pathlib import Path
 
 calibration_position = {
     # AIHub
-    "scene_042": sorted([str(p) for p in Path("videos/val/scene_042").glob("**/calibration.json")]),
-    
+    "scene_042": sorted(
+        [
+            # "/home/jongphago/Share/projects/nota/videos/val/scene_042/camera02/calibration.json",
+            # "/home/jongphago/Share/projects/nota/videos/val/scene_042/camera04/calibration.json",
+            "/home/jongphago/Share/projects/nota/videos/val/scene_042/camera09/calibration.json",
+            "/home/jongphago/Share/projects/nota/videos/val/scene_042/camera10/calibration.json",
+        ]
+    ),
     # Val
     # "scene_041": sorted([str(p) for p in Path("/workspace/videos/val/scene_041").glob("**/calibration.json")]),
     # "scene_042": sorted([str(p) for p in Path("/workspace/videos/val/scene_042").glob("**/calibration.json")]),
@@ -26,7 +32,6 @@ calibration_position = {
     # "scene_058": sorted([str(p) for p in Path("/workspace/videos/val/scene_058").glob("**/calibration.json")]),
     # "scene_059": sorted([str(p) for p in Path("/workspace/videos/val/scene_059").glob("**/calibration.json")]),
     # "scene_060": sorted([str(p) for p in Path("/workspace/videos/val/scene_060").glob("**/calibration.json")]),
-
     # Test
     # "scene_061": sorted([str(p) for p in Path("/workspace/videos/test/scene_061").glob("**/calibration.json")]),
     # "scene_062": sorted([str(p) for p in Path("/workspace/videos/test/scene_062").glob("**/calibration.json")]),

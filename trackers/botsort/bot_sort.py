@@ -13,6 +13,7 @@ from .kalman_filter import KalmanFilter
 import pdb
 import sys
 import math
+import logging
 
 np.float = np.float64
 
@@ -423,19 +424,23 @@ class BoTSORT(object):
         centroid_dists = matching.centroid_distance(strack_pool, detections)
         centroid_dists /= self.max_len
         # centroid_dists_mask = (centroid_dists > self.proximity_thresh)
+        logging.info(f"Centroid dists: {centroid_dists}")
 
         if self.with_reid:
             emb_dists = matching.embedding_distance(strack_pool, detections) / 2.0
+            logging.info(f"Emb dists: {emb_dists}")
 
             dists = 0.3 * centroid_dists + 0.7 * emb_dists
+            logging.info(f"dists: {dists}")
             # dists = emb_dists
             dists[centroid_dists > self.euc_thresh] = 1.0
             dists[emb_dists > self.appearance_thresh] = 1.0
+            logging.info(f"Final dists: {dists}")
         else:
             dists = ious_dists
 
         matches, u_track, u_detection = matching.linear_assignment(
-            dists, thresh=self.match_thresh
+            dists, thresh=self.match_thresh  # 0.8
         )
 
         for itracked, idet in matches:

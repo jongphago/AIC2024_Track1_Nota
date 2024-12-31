@@ -21,12 +21,17 @@ from tools.utils import (
     result_paths,
     cam_ids,
 )
+from tools.visualizer import visualize_tracker, visualize_dets
 
 import cv2
 import os
 import time
 import numpy as np
 import argparse
+import logging
+
+format = "%(asctime)s [%(process)d|%(thread)d](%(funcName)s:%(lineno)3d): %(message)s"
+logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
 
 
 def make_parser():
@@ -56,6 +61,8 @@ def run(
     for i in range(len(sources)):
         trackers.append(
             BoTSORT(
+                track_high_thresh=0.5,
+                new_track_thresh=0.5,
                 track_buffer=args["track_buffer"],
                 max_batch_size=args["max_batch_size"],
                 appearance_thresh=args["sct_appearance_thresh"],
@@ -94,10 +101,14 @@ def run(
     map_image = cv2.imread("maps/val/scene_042/map.png") if args["write_map"] else None
 
     track_records = {}
+    previous_frame = []
     while True:
         imgs = []
+        detss = []
+        detss_frames = []
+        tracker_frames = []
         start = time.time()
-
+        i = 0
         # first, run trackers each frame independently
         for (img_paths, writer), tracker, perspective_transform, result_list in zip(
             src_handlers, trackers, perspective_transforms, results_lists
@@ -117,6 +128,15 @@ def run(
                 .boxes.data.cpu()
                 .numpy()
             )
+            detss.append(dets)
+            det_frame = visualize_dets(img, dets)
+            detss_frames.append(det_frame)
+            cv2.imwrite(f"output_images/{cur_frame}_0_{i}_det_result.png", det_frame)
+            if previous_frame:
+                cv2.imwrite(
+                    f"output_images/{cur_frame}_0_{i}_det_compare.png",
+                    np.vstack([previous_frame[i], det_frame]),
+                )
 
             # run tracker
             online_targets, new_ratio = tracker.update(
@@ -130,8 +150,24 @@ def run(
             for t in tracker.tracked_stracks:
                 t.t_global_id = id_distributor.assign_id()
             imgs.append(img)
+            i += 1
+            
+            tracker_frame = visualize_tracker(img, tracker, is_label=True)
+            tracker_frames.append(tracker_frame)
+            cv2.imwrite(
+                f"output_images/{cur_frame}_1_{i}_det_sct_compare.png",
+                np.vstack([det_frame, tracker_frame]),
+            )
         if stop:
             break
+
+        previous_frame = detss_frames.copy()
+        cv2.imwrite(
+            f"output_images/{cur_frame}_0_det_result.png", np.vstack(detss_frames)
+        )
+        cv2.imwrite(
+            f"output_images/{cur_frame}_1_sct_result.png", np.vstack(tracker_frames)
+        )
 
         # second, run multi-camera tracker using above trackers results
         groups = clustering.update(trackers, cur_frame, scene)
@@ -161,9 +197,12 @@ def run(
                 write_map=args["write_map"],
                 track_records=track_records,
             )
-            cv2.imshow("result", cv2.resize(result_stack, (1152, 648)))
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+            _, w, _ = result_stack.shape
+            # cv2.imwrite("result.png", result_stack[:, : int(w / 2), :])
+            cv2.imwrite("result.png", result_stack)
+            # cv2.imshow("result", cv2.resize(result_stack, (1152, 648)))
+            # if cv2.waitKey(1) & 0xFF == ord("q"):
+            #     break
 
         print(f"video frame ({cur_frame}/{total_frames})")
         cur_frame += 1
@@ -192,7 +231,7 @@ if __name__ == "__main__":
     }
 
     scene = make_parser().scene
-    begin = time.time()     # start time
+    begin = time.time()  # start time
     if scene is not None:
         run(
             args=args,
