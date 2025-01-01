@@ -7,6 +7,9 @@ import os
 import pickle
 import json
 from tools.draw_table import create_track_records
+from tools.draw_bbox import DrawSCBoundingBox, DrawMCBoundingBox
+from tools.draw_map import DrawMap
+from tools.draw_table import generate_track_records, draw_table, create_track_records
 
 _COLORS = (
     np.array(
@@ -521,7 +524,6 @@ def write_vids(
     map_writer=None,
     map_image=None,
     write_map=False,
-    track_records=None,
 ):
     writers = [w for s, w in src_handlers]
     result_imgs = [] if write_result else None
@@ -535,200 +537,62 @@ def write_vids(
         else:
             gid_2_lenfeats[-2] = len(track.features)
 
+    is_mc = True
     for tracker_index, (tracker, img, w) in enumerate(zip(trackers, imgs, writers)):
-        outputs = [
-            t.tlbr.tolist()
-            + [t.score, t.global_id, gid_2_lenfeats.get(t.global_id, -1)]
-            for t in tracker.tracked_stracks
-        ]
-        pose_result = [t.pose for t in tracker.tracked_stracks if t.pose is not None]
-        if True:
-            img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
-            w.write(img)
-            if write_result:
-                result_imgs.append(img)
+        tracks = tracker.tracked_stracks
 
-        if write_map:
-            is_mc = True
-            tracks = tracker.tracked_stracks
+        # draw pose
+        pose_result = [t.pose for t in tracks if t.pose is not None]
+        keypoints = [p["keypoints"][:, :2] for p in pose_result]
+        scores = [p["keypoints"][:, 2] for p in pose_result]
+        img = visualize_kpt(img, keypoints, scores, thr=0.3)
+
+        if not is_mc:
+            # draw bounding box using sc_tracker
             for t in tracks:
-                location = tuple(map(int, t.location[0]))
-                track_id = t.global_id
-                color = (colors[track_id % 80] * 255).astype(np.uint8).tolist()
-                cv2.putText(
-                    sc_map_image,
-                    f"{str(track_id)}[{tracker_index}]",
-                    location,
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    color,
-                    2,
+                draw_bbox = DrawSCBoundingBox(
+                    img, t, colors, gid_2_lenfeats=gid_2_lenfeats
                 )
-                cv2.circle(sc_map_image, location, 10, color, -1)
-                
-    track_records = create_track_records(trackers)
+                draw_bbox.draw()
+                img = draw_bbox.get_image()
+            result_imgs.append(img)
 
-    if write_map:
-        is_mc = True
+            # draw map using sc_tracker
+            for t in tracks:
+                draw_map = DrawMap(sc_map_image, t, tracker_index, colors, is_mc=is_mc)
+                draw_map.draw()
+                sc_map_image = draw_map.get_image()
+
+    # draw map using mc_tracker
+    if is_mc:
         tracks = mc_tracker.tracked_mtracks
-
         for t in tracks:
-            location = t.curr_coords[0].astype(int).tolist()
-            track_id = t.global_id
-            color = (colors[track_id % 80] * 255).astype(np.uint8).tolist()
-            cv2.putText(
-                mc_map_image,
-                str(track_id),
-                location,
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                color,
-                2,
-            )
-            cv2.circle(mc_map_image, location, 10, color, -1)
+            draw_map = DrawMap(mc_map_image, t, tracker_index, colors, is_mc=is_mc)
+            draw_map.draw()
+            mc_map_image = draw_map.get_image()
 
     # draw camera track using mc_tracker
-    if False:
+    if is_mc:
         copied_imgs = [img.copy() for img in imgs]
-        m = 2
         for mtrack in mc_tracker.tracked_mtracks:
             img_paths = mtrack.img_paths
             path_tlbr = mtrack.path_tlbr
             track_id = mtrack.global_id
-            text = f"{track_id}"
-            txt_color = (
-                (0, 0, 0) if np.mean(colors[track_id % 80]) > 0.5 else (255, 255, 255)
-            )
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            txt_size = cv2.getTextSize(text, font, 0.4 * m, 1 * m)[0]
-            txt_bk_color = (colors[track_id % 80] * 255 * 0.7).astype(np.uint8).tolist()
-            color = (colors[track_id % 80] * 255).astype(np.uint8).tolist()
             for img_path in img_paths:
-                tlbr = path_tlbr[img_path].astype(int)
-                x0, y0 = tlbr[:2]
                 img = copied_imgs[img_path]
-                cv2.rectangle(img, tlbr[:2], tlbr[2:], color, 3)
-                cv2.rectangle(
-                    img,
-                    (x0, y0 - 2),
-                    (x0 + txt_size[0] + 1, y0 - int(1.5 * txt_size[1])),
-                    txt_bk_color,
-                    -1,
-                )
-                cv2.putText(
-                    img,
-                    text,
-                    (x0, int(y0 - txt_size[1] / 2)),
-                    font,
-                    0.4 * m,
-                    txt_color,
-                    thickness=1 * m,
-                )
+                tlbr = path_tlbr[img_path].astype(int)
+                draw_bbox = DrawMCBoundingBox(img, tlbr, track_id, colors)
+                draw_bbox.draw()
+                img = draw_bbox.get_image()
         result_imgs = copied_imgs
 
-    if write_map:
-        map_image = map_image[-1080:, :]
-
-    # write table
+    # draw table
     if True:
-        def generate_track_records(track_records):
-            track_records = pd.DataFrame(track_records).T
-            # 필터링: track_id가 음수가 아닌 데이터만 선택
-            filtered_data = track_records[track_records['track_id'] > 0]
-            # 정렬: duration을 기준으로 오름차순
-            sorted_data = filtered_data.sort_values(by='duration', ascending=True)
-            # 상위 7개의 데이터 선택
-            top_data = sorted_data.head(7)
-            # 5개 컬럼 선택
-            result = top_data[["track_id", "X", "Y", "distance", "duration"]]
-            return result
-
-        def generate_random_table(rows, cols):
-            data = {
-                f"Col {j+1}": [random.randint(1, 100) for _ in range(rows)]
-                for j in range(cols)
-            }
-            return pd.DataFrame(data)
-
-        # OpenCV 화면에 표를 그리는 함수
-        def draw_table(
-            image, table, start_x, start_y, cell_width, cell_height, font_scale=0.6
-        ):
-            """
-            Draws a Pandas DataFrame table on an OpenCV image.
-
-            Args:
-                image (numpy.ndarray): OpenCV image to draw on.
-                table (pandas.DataFrame): Table to draw.
-                start_x (int): X-coordinate to start drawing.
-                start_y (int): Y-coordinate to start drawing.
-                cell_width (int): Width of each cell.
-                cell_height (int): Height of each cell.
-                font_scale (float): Font size for text.
-            """
-            # Table dimensions
-            rows, cols = table.shape
-            end_x = start_x + cols * cell_width
-            end_y = start_y + (rows + 1) * cell_height
-
-            # Draw horizontal lines
-            for i in range(rows + 2):
-                y = start_y + i * cell_height
-                cv2.line(image, (start_x, y), (end_x, y), (255, 255, 255), 10)
-
-            # Draw vertical lines
-            for j in range(cols + 1):
-                x = start_x + j * cell_width
-                cv2.line(image, (x, start_y), (x, end_y), (255, 255, 255), 5)
-
-            # Add text in cells
-            columns_names = ["Track ID", "X", "Y", "Distance", "Duration"]
-            for j, column_name in enumerate(columns_names):
-                text_size = cv2.getTextSize(
-                    column_name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
-                )[0]
-                text_x = start_x + j * cell_width + (cell_width - text_size[0]) // 2
-                text_y = start_y + (cell_height + text_size[1]) // 2
-                cv2.putText(
-                    image,
-                    column_name,
-                    (text_x, text_y),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    font_scale,
-                    (255, 255, 255),
-                    10,
-                )
-
-            for i in range(rows):
-                for j in range(cols):
-                    text = str(table.iloc[i, j])
-                    text_size = cv2.getTextSize(
-                        text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
-                    )[0]
-                    text_x = start_x + j * cell_width + (cell_width - text_size[0]) // 2
-                    text_y = (
-                        start_y
-                        + (i + 1) * cell_height
-                        + (cell_height + text_size[1]) // 2
-                    )
-                    cv2.putText(
-                        image,
-                        text,
-                        (text_x, text_y),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        font_scale,
-                        (255, 255, 255),
-                        10,
-                    )
-
         # 표 데이터를 랜덤으로 생성하는 함수
         table_frame = np.zeros_like(map_image, dtype=np.uint8)
-
         # Generate a random table
-        rows, cols = 7, 5
-        random_table = generate_random_table(rows, cols)
+        track_records = create_track_records(trackers)
         record_table = generate_track_records(track_records)
-
         # Draw the table in the bottom-left corner
         draw_table(
             table_frame,
@@ -740,7 +604,7 @@ def write_vids(
             font_scale=1.8,
         )
 
-    is_table = False
+    is_table = True
     window = table_frame if is_table else sc_map_image
     stacked_map = np.vstack([mc_map_image, window])
 

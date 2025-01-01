@@ -195,7 +195,6 @@ def run(
                 map_writer=map_writer,
                 map_image=map_image.copy(),
                 write_map=args["write_map"],
-                track_records=track_records,
             )
             _, w, _ = result_stack.shape
             # cv2.imwrite("result.png", result_stack[:, : int(w / 2), :])

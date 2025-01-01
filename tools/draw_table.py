@@ -53,6 +53,22 @@ def draw_table(
         cell_width (int): Width of each cell.
         cell_height (int): Height of each cell.
         font_scale (float): Font size for text.
+
+    Example:
+        table_frame = np.zeros_like(map_image, dtype=np.uint8)
+        # Generate a random table
+        track_records = create_track_records(trackers)
+        record_table = generate_track_records(track_records)
+        # Draw the table in the bottom-left corner
+        draw_table(
+            table_frame,
+            record_table,
+            start_x=210,
+            start_y=80,
+            cell_width=300,
+            cell_height=120,
+            font_scale=1.8,
+        )
     """
     # Table dimensions
     rows, cols = table.shape
