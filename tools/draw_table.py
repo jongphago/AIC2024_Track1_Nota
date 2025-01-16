@@ -13,6 +13,7 @@ def create_track_records(trackers):
                 "X": int(t.location[0][0]),
                 "Y": int(t.location[0][1]),
                 "distance": int(np.linalg.norm(np.array([0, 0]) - t.location[0])),
+                "score": f"{t.score:.2%}"
             }
             if t.global_id not in track_records:
                 track_records[t.global_id] = track_record
@@ -24,14 +25,14 @@ def create_track_records(trackers):
 
 
 def generate_track_records(track_records, top_n=7):
-    column_names = ["track_id", "X", "Y", "distance", "duration"]
+    column_names = ["track_id", "X", "Y", "distance", "score"]
     if not track_records:
         return pd.DataFrame(columns=column_names)
     track_records = pd.DataFrame(track_records).T
     # 필터링: track_id가 음수가 아닌 데이터만 선택
     filtered_data = track_records[track_records["track_id"] > 0]
     # 정렬: duration을 기준으로 오름차순
-    sorted_data = filtered_data.sort_values(by="duration", ascending=True)
+    sorted_data = filtered_data.sort_values(by="track_id", ascending=True)
     # 상위 7개의 데이터 선택
     top_data = sorted_data.head(top_n)
     # 5개 컬럼 선택
@@ -58,19 +59,21 @@ def draw_table(
     rows, cols = table.shape
     end_x = start_x + cols * cell_width
     end_y = start_y + (top_n + 1) * cell_height
+    line_color = (0, 0, 0)
+    text_color = (0, 0, 0)
 
     # Draw horizontal lines
     for i in range(top_n + 2):
         y = start_y + i * cell_height
-        cv2.line(image, (start_x, y), (end_x, y), (255, 255, 255), 10)
+        cv2.line(image, (start_x, y), (end_x, y), line_color, 3)
 
     # Draw vertical lines
     for j in range(cols + 1):
         x = start_x + j * cell_width
-        cv2.line(image, (x, start_y), (x, end_y), (255, 255, 255), 5)
+        cv2.line(image, (x, start_y), (x, end_y), line_color, 3)
 
     # Add text in cells
-    columns_names = ["Track ID", "X", "Y", "Distance", "Duration"]
+    columns_names = ["Track ID", "X", "Y", "Distance", "Score"]
     for j, column_name in enumerate(columns_names):
         text_size = cv2.getTextSize(
             column_name, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1
@@ -83,8 +86,8 @@ def draw_table(
             (text_x, text_y),
             cv2.FONT_HERSHEY_SIMPLEX,
             font_scale,
-            (255, 255, 255),
-            10,
+            text_color,
+            2,
         )
 
     for i in range(rows):
@@ -101,8 +104,8 @@ def draw_table(
                 (text_x, text_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 font_scale,
-                (255, 255, 255),
-                10,
+                text_color,
+                2,
             )
 
 

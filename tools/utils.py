@@ -1,3 +1,4 @@
+import enum
 import numpy as np
 from pathlib import Path
 import cv2
@@ -5,6 +6,8 @@ import os
 import pickle
 import json
 from tools.draw_table import draw_table, generate_track_records, create_track_records
+from tools.draw_map import DrawMap
+from tools.draw_bbox import DrawMCBoundingBox, DrawSCBoundingBox
 
 _COLORS = (
     np.array(
@@ -445,7 +448,7 @@ def get_reader_writer(source):
     src_paths = [os.path.join(source, s) for s in src_paths]
 
     fps = 1
-    wi, he = 1920, 1080
+    wi, he = 1280, 720
     os.makedirs("output_videos/" + source.split("/")[-2], exist_ok=True)
     # dst = 'output_videos/' + source.replace('/','').replace('.','') + '.mp4'
     dst = (
@@ -480,7 +483,7 @@ def get_map_writer(source):
 
 def get_result_writer(source):
     fps = 1
-    wi, he = 1920 * 2, 1080 * 2
+    wi, he = 1280 * 2, 480 * 2
     os.makedirs("output_videos/" + source.split("/")[-2], exist_ok=True)
     dst = (
         f"output_videos/{source.split('/')[-2]}/"
@@ -523,56 +526,89 @@ def write_vids(
     writers = [w for s, w in src_handlers]
     result_imgs = [] if write_result else None
     gid_2_lenfeats = {}
+    if write_result:
+        for (_, writer), img in zip(src_handlers, imgs):
+            writer.write(img)
 
     for track in mc_tracker.tracked_mtracks + mc_tracker.lost_mtracks:
         if track.is_activated:
             gid_2_lenfeats[track.track_id] = len(track.features)
         else:
             gid_2_lenfeats[-2] = len(track.features)
+            
+    
+            
+        
 
-    for tracker, img, w in zip(trackers, imgs, writers):
-        outputs = [
-            t.tlbr.tolist()
-            + [t.score, t.global_id, gid_2_lenfeats.get(t.global_id, -1)]
-            for t in tracker.tracked_stracks
-        ]
-        pose_result = [t.pose for t in tracker.tracked_stracks if t.pose is not None]
-        img = visualize(outputs, img, colors, pose, pose_result, cur_frame)
-        img = cv2.resize(img, (640, 960))
-        # w.write(img)
-        if write_result:
+    for tracker_index, (tracker, img, w) in enumerate(zip(trackers, imgs, writers)):
+        tracks = tracker.tracked_stracks
+
+        # Visualize pose
+        pose_result = [t.pose for t in tracks if t.pose is not None]
+        keypoints = [p["keypoints"][:, :2] for p in pose_result]
+        scores = [p["keypoints"][:, 2] for p in pose_result]
+        img = visualize_kpt(img, keypoints, scores, thr=0.3)
+
+    is_mc = False
+
+    if not is_mc:
+        for tracker_index, (tracker, img, w) in enumerate(zip(trackers, imgs, writers)):
+            tracks = tracker.tracked_stracks
+            
+            # Visualize bbox
+            for t in tracks:
+                draw_bbox = DrawSCBoundingBox(img, t, colors, gid_2_lenfeats=gid_2_lenfeats)
+                draw_bbox.draw()
+                img = draw_bbox.get_image()
             result_imgs.append(img)
-        if write_map:
-            for t in tracker.tracked_stracks:
-                color = (colors[t.global_id % 80] * 255).astype(np.uint8).tolist()
-                location = tuple(map(int, t.location[0]))
-                cv2.circle(map_image, location, 5, color, -1)
-    if write_map:
-        map_image = map_image[-1080:, :]
-        track_records = create_track_records(trackers)
-        table_frame = np.zeros_like(map_image)
-        record_table = generate_track_records(track_records)
-        draw_table(
-            table_frame,
-            record_table,
-            start_x=210,
-            start_y=80,
-            cell_width=300,
-            cell_height=120,
-            font_scale=1.8,
-        )
-        stacked_map = np.vstack([map_image, table_frame])
-        if True:
-            stacked_map = cv2.resize(stacked_map, (1280, 960))
-        # map_writer.write(stacked_map)
+            
+            # Visualize map
+            for t in tracks:
+                draw_map = DrawMap(map_image, t, tracker_index, colors, is_mc=is_mc)
+                draw_map.draw()
+                map_image = draw_map.get_image()
+            
+    else:
+        mtracks = mc_tracker.tracked_mtracks + mc_tracker.lost_mtracks
+        copied_imgs = [img.copy() for img in imgs]
+        
+        # Visualize bbox
+        for mtrack in mtracks:
+            img_paths = mtrack.img_paths
+            path_tlbr = mtrack.path_tlbr
+            track_id = mtrack.global_id
+            for img_path in img_paths:
+                img = copied_imgs[img_path]
+                tlbr = path_tlbr[img_path].astype(int)
+                draw_bbox = DrawMCBoundingBox(img, tlbr, track_id, colors)
+                draw_bbox.draw()
+                img = draw_bbox.get_image()
+        result_imgs = copied_imgs
+        
+        # Visualize map
+        for mtrack in mtracks:
+            draw_map = DrawMap(map_image, mtrack, tracker_index, colors, is_mc=is_mc)
+            draw_map.draw()
+            map_image = draw_map.get_image()
 
+    # Visualize table
+    map_image = map_image[-1080:, :]
+    track_records = create_track_records(trackers)
+    table_frame = np.ones_like(map_image) * 255
+    record_table = generate_track_records(track_records)
+    draw_table(table_frame, record_table, 100, 50, 220, 70, font_scale=1.2)
+    stacked_map = np.vstack([map_image, table_frame])
+    if True:
+        stacked_map = cv2.resize(stacked_map, (1280, 960))
+    # map_writer.write(stacked_map)
+
+    # Visualize result
+    stacked_img = np.vstack(result_imgs)  # 1440, 1280
+    stacked_img = cv2.resize(stacked_img, (1280, 960))
+    result_stack = np.hstack([stacked_img, stacked_map])
     if write_result:
-        stacked_img = np.vstack(result_imgs)
-        stacked_img = cv2.resize(stacked_img, (1280, 960))
-
-        result_stack = np.hstack([stacked_img, stacked_map])
-        # result_writer.write(result_stack)
-        return result_stack
+        result_writer.write(result_stack)
+    return result_stack
 
 
 def write_results_testset(result_lists, result_path):

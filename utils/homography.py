@@ -50,7 +50,7 @@ class HomographyFinder:
             [0.01306166, -0.01449382, -0.00023464, 0.00115228, 0.00826946]
         ]
 
-    def preprocess_images(self):
+    def preprocess_images(self, save=True):
         """카메라 이미지(cam_image)와 평면 이미지(map_image)의 크기 차이가 많이 나는 경우 올바른 변환 행렬(H)을 찾을 수 없다.
         이 경우 이미지를 resize하여 두 이미지의 크기를 비슷하게 맞춘다.
         """
@@ -67,7 +67,8 @@ class HomographyFinder:
             original_map_image, (mw, mh), interpolation=cv2.INTER_AREA
         )
         self.size = (ch, cw, mh, mw)
-        return map_image
+        
+        return original_map_image
 
     def initialize_images(self):
         """이미지 경로를 읽고 BGR에서 RGB로 변환하여 반환한다.
@@ -157,9 +158,11 @@ class HomographyFinder:
         with open(Path(self.cam_path).parent / f"homography.json", "w") as f:
             json.dump(
                 {
-                    # "camera projection matrix": self.osmo_action_5pro_camera_projection_matrix,
+                    "camera projection matrix": self.osmo_action_5pro_camera_projection_matrix,
                     "homography matrix": self.H.tolist(),
-                    # "dist": self.osmo_action_5pro_dist,
+                    "dist": self.osmo_action_5pro_dist,
+                    "cap_points": self.cam_points,
+                    "map_points": self.map_points,
                 },
                 f,
             )
@@ -185,7 +188,7 @@ if __name__ == "__main__":
     scene = "scene_042"
     camera_id = 2
     camera_path = f"videos/val/{scene}/camera{camera_id:02d}/cam.png"
-    map_path = f"maps/val/{scene}/map.png"
+    map_path = f"maps/val/{scene}/map_ces.png"
 
     load_cam_image(camera_id, camera_path)
 

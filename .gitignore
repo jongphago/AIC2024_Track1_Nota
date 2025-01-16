@@ -12,3 +12,5 @@ __pycache__/
 async/screenshot
 output_images
 result.png
+maps/val/scene_042/
+utils/homography.ipynb

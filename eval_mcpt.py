@@ -147,7 +147,9 @@ async def run(
 
     # map writer
     map_writer = get_map_writer(sources[0]) if args["write_map"] else None
-    map_image = cv2.imread("maps/val/scene_042/map.png") if args["write_map"] else None
+    map_image = cv2.imread("maps/val/scene_042/map_ces.png") if args["write_map"] else None
+    map_image = np.ones((720, 1280, 3), np.uint8) * 255
+    
 
     while True:
         imgs = []
@@ -181,7 +183,7 @@ async def run(
 
             # run tracker
             online_targets, new_ratio = tracker.update(
-                dets, img, None, pose
+                dets, img, camera_index, pose
             )  # run tracker
 
             # run perspective transform
@@ -224,12 +226,12 @@ async def run(
             result_image = await draw_latency(result_image, min(timestamps))
             cv2.imshow("result", cv2.resize(result_image, (1152, 648)))
             if cv2.waitKey(1) & 0xFF == ord("q"):
+                finalize_cams(src_handlers, result_writer, map_writer)
                 break
 
         print(f"video frame ({cur_frame}/{total_frames})")
         cur_frame += 1
 
-    finalize_cams(src_handlers, result_writer, map_writer)
 
     # save results txt
     write_results_testset(results_lists, result_paths)
